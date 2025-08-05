@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lake Bienne Weather</title>
+    <style>
+        :root {
+            --bg-main: #1a1a1a;
+            --bg-alt: #2d2d2d;
+            --bg-nav: #1a1a1a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --accent: #5dade2;
+            --border: #444;
+            --rain-bar: #4a90e2;
+            --current-time: #ff6b6b;
+            --today-color: #ff8c42;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
+            touch-action: pan-y;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: var(--bg-main);
+            color: var(--text-primary);
+            font-size: 12px;
+        }
+        
+        nav { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            right: 0; 
+            height: 65px; 
+            background: var(--bg-nav); 
+            border-bottom: 1px solid var(--border); 
+            z-index: 1000; 
+        }
+        
+        .nav-top {
+            height: 35px;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .nav-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .refresh-btn {
+            margin-left: auto;
+            background: none;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 3px 10px;
+            border-radius: 3px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        
+        .hours-bar {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 0 20px;
+            position: relative;
+        }
+        
+        .hours-labels {
+            display: flex;
+            width: 100%;
+            padding: 3px 0;
+        }
+        
+        .hour-label {
+            flex: 1;
+            text-align: center;
+            font-size: 10px;
+            color: #ffffff;
+            font-weight: 500;
+        }
+        
+        .indicators-row {
+            width: 100%;
+            display: flex;
+            height: 10px;
+            align-items: center;
+            position: relative;
+        }
+        
+        .indicator-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+        }
+        
+        .indicator-line {
+            width: 1px;
+            height: 6px;
+            background: rgba(255,255,255,0.9);
+        }
+
+        /* Current time marker */
+        .current-time-marker {
+            position: absolute;
+            width: 2px;
+            height: 10px;
+            background: var(--current-time);
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+            transition: left 0.3s ease;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 420px;
+            margin: 75px auto 20px;
+            padding: 0 10px 20px;
+        }
+        
+        .day-card {
+            background: var(--bg-alt);
+            border-radius: 12px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .day-header {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--accent);
+            text-align: center;
+        }
+        
+        .day-header.today {
+            color: var(--today-color);
+        }
+        
+        .section-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin: 6px 0 2px;
+        }
+        
+        .data-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            padding: 2px 0;
+        }
+        
+        .temp-value {
+            flex: 1;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .weather-icon {
+            flex: 1;
+            text-align: center;
+            font-size: 16px;
+        }
+        
+        .rain-chart {
+            position: relative;
+            height: 35px;
+            margin: 6px 0;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .rain-bars {
+            display: flex;
+            height: 100%;
+            align-items: flex-end;
+        }
+        
+        .rain-hour {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+        }
+        
+        .rain-stack {
+            width: 75%;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        
+        .rain-bar {
+            height: 4px;
+            background: var(--rain-bar);
+            opacity: 0.8;
+        }
+        
+        .wind-section {
+            margin: 6px 0;
+        }
+        
+        .wind-row {
+            display: flex;
+            font-size: 10px;
+            margin-bottom: 1px;
+        }
+        
+        .wind-hour {
+            flex: 1;
+            text-align: center;
+            padding: 1px;
+        }
+        
+        .wind-avg {
+            color: var(--text-primary);
+        }
+        
+        .wind-gust {
+            color: #ff9999;
+        }
+        
+        .wind-dir {
+            color: #a0d0ff;
+            font-size: 9px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-top">
+            <div class="nav-title">Boot-Wetter Bieler See</div>
+            <button class="refresh-btn" onclick="loadWeather()">↻</button>
+        </div>
+        <div class="hours-bar">
+            <div class="hours-labels">
+                <div class="hour-label">6</div>
+                <div class="hour-label">7</div>
+                <div class="hour-label">8</div>
+                <div class="hour-label">9</div>
+                <div class="hour-label">10</div>
+                <div class="hour-label">11</div>
+                <div class="hour-label">12</div>
+                <div class="hour-label">13</div>
+                <div class="hour-label">14</div>
+                <div class="hour-label">15</div>
+                <div class="hour-label">16</div>
+                <div class="hour-label">17</div>
+                <div class="hour-label">18</div>
+                <div class="hour-label">19</div>
+                <div class="hour-label">20</div>
+                <div class="hour-label">21</div>
+            </div>
+            <div class="indicators-row">
+                <div class="current-time-marker" id="timeMarker"></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+                <div class="indicator-container"><div class="indicator-line"></div></div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container" id="weather-container">
+        <div class="loading">Wetterdaten laden...</div>
+    </div>
+
+    <script>
+        const API_URL = 'https://api.open-meteo.com/v1/dwd-icon';
+        const LAT = 47.1485;
+        const LON = 7.2437;
+        
+        // Weather code to icon mapping
+        const weatherIcons = {
+            0: '☀️', // Clear sky
+            1: '🌤️', // Mainly clear
+            2: '⛅', // Partly cloudy
+            3: '☁️', // Overcast
+            45: '🌫️', // Fog
+            48: '🌫️', // Rime fog
+            51: '🌦️', // Light drizzle
+            53: '🌦️', // Moderate drizzle
+            55: '🌦️', // Dense drizzle
+            61: '🌧️', // Slight rain
+            63: '🌧️', // Moderate rain
+            65: '🌧️', // Heavy rain
+            71: '🌨️', // Slight snow
+            73: '🌨️', // Moderate snow
+            75: '🌨️', // Heavy snow
+            77: '🌨️', // Snow grains
+            80: '🌦️', // Slight rain showers
+            81: '🌦️', // Moderate rain showers
+            82: '🌧️', // Violent rain showers
+            85: '🌨️', // Slight snow showers
+            86: '🌨️', // Heavy snow showers
+            95: '⛈️', // Thunderstorm
+            96: '⛈️', // Thunderstorm with slight hail
+            99: '⛈️'  // Thunderstorm with heavy hail
+        };
+        
+        const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+        
+        // Convert degrees to compass direction
+        function degreesToCompass(degrees) {
+            const directions = ['N', 'NO', 'O', 'SO', 'S', 'SW', 'W', 'NW'];
+            const index = Math.round(((degrees % 360) / 45)) % 8;
+            return directions[index];
+        }
+        
+        async function loadWeather() {
+            try {
+                const params = new URLSearchParams({
+                    latitude: LAT,
+                    longitude: LON,
+                    hourly: 'temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m',
+                    timezone: 'Europe/Zurich',
+                    forecast_days: 7
+                });
+                
+                const response = await fetch(`${API_URL}?${params}`);
+                const data = await response.json();
+                
+                displayWeather(data);
+            } catch (error) {
+                console.error('Error loading weather:', error);
+                document.getElementById('weather-container').innerHTML = 
+                    '<div class="loading">Fehler beim Laden der Wetterdaten</div>';
+            }
+        }
+        
+        function displayWeather(data) {
+            const container = document.getElementById('weather-container');
+            container.innerHTML = '';
+            
+            const hourly = data.hourly;
+            const now = new Date();
+            const today = now.toDateString();
+            
+            for (let day = 0; day < 7; day++) {
+                const dayDate = new Date(now);
+                dayDate.setDate(now.getDate() + day);
+                
+                const dayCard = document.createElement('div');
+                dayCard.className = 'day-card';
+                
+                // Day header with German format
+                const dayName = dayNames[dayDate.getDay()];
+                const dateStr = `${dayDate.getDate()}.${dayDate.getMonth() + 1}.${dayDate.getFullYear()}`;
+                const isToday = dayDate.toDateString() === today;
+                
+                dayCard.innerHTML = `<div class="day-header ${isToday ? 'today' : ''}">${dayName} ${dateStr}</div>`;
+                
+                // Get hourly data for this day (6:00-21:00)
+                const startHour = dayDate.toISOString().slice(0, 10) + 'T06:00';
+                const startIndex = hourly.time.findIndex(t => t >= startHour);
+                
+                if (startIndex === -1) continue;
+                
+                // Temperature (every 3 hours: 6, 9, 12, 15, 18, 21)
+                dayCard.innerHTML += '<div class="section-label">Temperatur</div>';
+                const tempRow = document.createElement('div');
+                tempRow.className = 'data-row';
+                for (let h = 0; h < 16; h += 3) {
+                    const idx = startIndex + h;
+                    const temp = Math.round(hourly.temperature_2m[idx] || 0);
+                    tempRow.innerHTML += `<div class="temp-value">${temp}°</div>`;
+                }
+                dayCard.appendChild(tempRow);
+                
+                // Weather icons with label
+                dayCard.innerHTML += '<div class="section-label">Wolken / Nebel</div>';
+                const weatherRow = document.createElement('div');
+                weatherRow.className = 'data-row';
+                for (let i = 0; i < 11; i++) {
+                    const h = Math.round(i * 1.5);
+                    const idx = startIndex + h;
+                    const icon = weatherIcons[hourly.weather_code[idx]] || '❓';
+                    weatherRow.innerHTML += `<div class="weather-icon">${icon}</div>`;
+                }
+                dayCard.appendChild(weatherRow);
+                
+                // Rain probability chart
+                dayCard.innerHTML += '<div class="section-label">Regen, 1 Strich = 5%</div>';
+                const rainChart = document.createElement('div');
+                rainChart.className = 'rain-chart';
+                const rainBars = document.createElement('div');
+                rainBars.className = 'rain-bars';
+                
+                for (let h = 0; h < 16; h++) {
+                    const idx = startIndex + h;
+                    const rainProb = hourly.precipitation_probability[idx] || 0;
+                    const barCount = Math.min(Math.floor(rainProb / 5), 6);
+                    
+                    const hourDiv = document.createElement('div');
+                    hourDiv.className = 'rain-hour';
+                    
+                    const stack = document.createElement('div');
+                    stack.className = 'rain-stack';
+                    
+                    for (let b = 0; b < barCount; b++) {
+                        stack.innerHTML += '<div class="rain-bar"></div>';
+                    }
+                    
+                    hourDiv.appendChild(stack);
+                    rainBars.appendChild(hourDiv);
+                }
+                
+                rainChart.appendChild(rainBars);
+                dayCard.appendChild(rainChart);
+                
+                // Wind section
+                dayCard.innerHTML += '<div class="section-label">Wind, Durchschnitt und Böen, km/h</div>';
+                const windSection = document.createElement('div');
+                windSection.className = 'wind-section';
+                
+                const windAvgRow = document.createElement('div');
+                windAvgRow.className = 'wind-row';
+                const windGustRow = document.createElement('div');
+                windGustRow.className = 'wind-row';
+                const windDirRow = document.createElement('div');
+                windDirRow.className = 'wind-row';
+                
+                for (let h = 0; h < 16; h++) {
+                    const idx = startIndex + h;
+                    const windSpeed = Math.round(hourly.wind_speed_10m[idx] || 0);
+                    const windGust = Math.round(hourly.wind_gusts_10m[idx] || 0);
+                    const windDir = degreesToCompass(hourly.wind_direction_10m[idx] || 0);
+                    
+                    windAvgRow.innerHTML += `<div class="wind-hour wind-avg">${windSpeed}</div>`;
+                    windGustRow.innerHTML += `<div class="wind-hour wind-gust">${windGust}</div>`;
+                    windDirRow.innerHTML += `<div class="wind-hour wind-dir">${windDir}</div>`;
+                }
+                
+                windSection.appendChild(windAvgRow);
+                windSection.appendChild(windGustRow);
+                windSection.appendChild(windDirRow);
+                dayCard.appendChild(windSection);
+                
+                container.appendChild(dayCard);
+            }
+        }
+        
+        // Time marker functionality
+        function updateTimeMarker() {
+            const timeMarker = document.getElementById('timeMarker');
+            const indicatorsRow = document.querySelector('.indicators-row');
+            
+            // Get current time in Swiss timezone
+            const now = new Date();
+            const swissTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Zurich"}));
+            const hours = swissTime.getHours();
+            const minutes = swissTime.getMinutes();
+            
+            // Calculate position
+            const startHour = 6;
+            const endHour = 21;
+            const totalHours = endHour - startHour;
+            const numHourLabels = totalHours + 1; // 16 labels from 6 to 21
+            
+            // Convert current time to decimal hours
+            const currentDecimalHour = hours + (minutes / 60);
+            
+            // Check if time is within range
+            if (currentDecimalHour < startHour || currentDecimalHour > endHour) {
+                timeMarker.style.display = 'none';
+                return;
+            }
+            
+            timeMarker.style.display = 'block';
+            
+            // Calculate position accounting for centering
+            const halfLabelWidth = 50 / numHourLabels; // Half width as percentage
+            
+            // Calculate percentage position between centers
+            const hoursFromStart = currentDecimalHour - startHour;
+            const rawPercentage = (hoursFromStart / totalHours) * 100;
+            
+            // Adjust for the padding (map from 0-100 to halfLabelWidth to 100-halfLabelWidth)
+            const adjustedPercentage = halfLabelWidth + (rawPercentage * (100 - 2 * halfLabelWidth) / 100);
+            
+            // Calculate pixel position
+            const containerWidth = indicatorsRow.offsetWidth;
+            const pixelPosition = (adjustedPercentage / 100) * containerWidth;
+            
+            // Apply position
+            timeMarker.style.left = `${pixelPosition}px`;
+        }
+        
+        // Prevent double-tap zoom
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function (event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Update time marker immediately and every minute
+            updateTimeMarker();
+            setInterval(updateTimeMarker, 60000); // Update every minute
+            
+            // Update on window resize
+            window.addEventListener('resize', updateTimeMarker);
+        });
+        
+        // Load weather on page load
+        loadWeather();
+    </script>
+</body>
+</html>
