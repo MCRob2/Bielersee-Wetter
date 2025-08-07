@@ -6,11 +6,11 @@
     <title>Lake Bienne Weather</title>
     <style>
         :root {
-            --bg-main: #1a1a1a;
-            --bg-alt: #2d2d2d;
-            --bg-nav: #1a1a1a;
-            --text-primary: #e0e0e0;
-            --text-secondary: #b0b0b0;
+            --bg-main: #000000;
+            --bg-alt: #111111;
+            --bg-nav: #000000;
+            --text-primary: #f0f0f0;
+            --text-secondary: #e0e0e0;
             --accent: #5dade2;
             --border: #444;
             --rain-bar: #4a90e2;
@@ -109,18 +109,6 @@
             width: 1px;
             height: 6px;
             background: rgba(255,255,255,0.9);
-        }
-
-        /* Current time marker */
-        .current-time-marker {
-            position: absolute;
-            width: 2px;
-            height: 10px;
-            background: var(--current-time);
-            top: 50%;
-            transform: translateY(-50%);
-            z-index: 10;
-            transition: left 0.3s ease;
         }
         
         .container {
@@ -240,7 +228,12 @@
         .wind-dir {
             color: #a0d0ff;
             font-size: 9px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            line-height: 1;
         }
+        
         
         .loading {
             text-align: center;
@@ -275,7 +268,6 @@
                 <div class="hour-label">21</div>
             </div>
             <div class="indicators-row">
-                <div class="current-time-marker" id="timeMarker"></div>
                 <div class="indicator-container"><div class="indicator-line"></div></div>
                 <div class="indicator-container"><div class="indicator-line"></div></div>
                 <div class="indicator-container"><div class="indicator-line"></div></div>
@@ -459,7 +451,8 @@
                     const idx = startIndex + h;
                     const windSpeed = Math.round(hourly.wind_speed_10m[idx] || 0);
                     const windGust = Math.round(hourly.wind_gusts_10m[idx] || 0);
-                    const windDir = degreesToCompass(hourly.wind_direction_10m[idx] || 0);
+                    const windDegrees = Math.round(hourly.wind_direction_10m[idx] || 0);
+                    const windDir = degreesToCompass(windDegrees);
                     
                     windAvgRow.innerHTML += `<div class="wind-hour wind-avg">${windSpeed}</div>`;
                     windGustRow.innerHTML += `<div class="wind-hour wind-gust">${windGust}</div>`;
@@ -475,51 +468,6 @@
             }
         }
         
-        // Time marker functionality
-        function updateTimeMarker() {
-            const timeMarker = document.getElementById('timeMarker');
-            const indicatorsRow = document.querySelector('.indicators-row');
-            
-            // Get current time in Swiss timezone
-            const now = new Date();
-            const swissTime = new Date(now.toLocaleString("en-US", {timeZone: "Europe/Zurich"}));
-            const hours = swissTime.getHours();
-            const minutes = swissTime.getMinutes();
-            
-            // Calculate position
-            const startHour = 6;
-            const endHour = 21;
-            const totalHours = endHour - startHour;
-            const numHourLabels = totalHours + 1; // 16 labels from 6 to 21
-            
-            // Convert current time to decimal hours
-            const currentDecimalHour = hours + (minutes / 60);
-            
-            // Check if time is within range
-            if (currentDecimalHour < startHour || currentDecimalHour > endHour) {
-                timeMarker.style.display = 'none';
-                return;
-            }
-            
-            timeMarker.style.display = 'block';
-            
-            // Calculate position accounting for centering
-            const halfLabelWidth = 50 / numHourLabels; // Half width as percentage
-            
-            // Calculate percentage position between centers
-            const hoursFromStart = currentDecimalHour - startHour;
-            const rawPercentage = (hoursFromStart / totalHours) * 100;
-            
-            // Adjust for the padding (map from 0-100 to halfLabelWidth to 100-halfLabelWidth)
-            const adjustedPercentage = halfLabelWidth + (rawPercentage * (100 - 2 * halfLabelWidth) / 100);
-            
-            // Calculate pixel position
-            const containerWidth = indicatorsRow.offsetWidth;
-            const pixelPosition = (adjustedPercentage / 100) * containerWidth;
-            
-            // Apply position
-            timeMarker.style.left = `${pixelPosition}px`;
-        }
         
         // Prevent double-tap zoom
         let lastTouchEnd = 0;
@@ -531,16 +479,7 @@
             lastTouchEnd = now;
         }, false);
         
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
-            // Update time marker immediately and every minute
-            updateTimeMarker();
-            setInterval(updateTimeMarker, 60000); // Update every minute
-            
-            // Update on window resize
-            window.addEventListener('resize', updateTimeMarker);
-        });
-        
+                
         // Load weather on page load
         loadWeather();
     </script>
