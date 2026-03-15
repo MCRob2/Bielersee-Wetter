@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Radar – Schweiz</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsfive@0.3.10/dist/browser/hdf5.js"></script>
+    <style>
+        :root {
+            --bg: #000;
+            --border: #444;
+            --accent: #5dade2;
+            --text: #f0f0f0;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        nav {
+            height: 40px;
+            background: var(--bg);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            flex-shrink: 0;
+            z-index: 1000;
+        }
+
+        .nav-inner {
+            display: flex;
+            width: 100%;
+            align-items: center;
+        }
+
+        .nav-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 6px;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+
+        .nav-btn {
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 4px 10px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            line-height: 1;
+        }
+
+        .nav-btn.active {
+            border-color: var(--accent);
+            background: rgba(93, 173, 226, 0.15);
+        }
+
+        #map { flex: 1; z-index: 1; }
+
+        .controls {
+            height: 50px;
+            background: var(--bg);
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            gap: 8px;
+            flex-shrink: 0;
+            z-index: 1000;
+        }
+
+        .play-btn {
+            background: none;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            width: 32px; height: 32px;
+            border-radius: 3px;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .timeline { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+        .timeline input { width: 100%; accent-color: var(--accent); }
+        .timeline-label {
+            font-family: "SF Mono", "Menlo", "Consolas", monospace;
+            font-size: 13px;
+            color: var(--text);
+            text-align: center;
+        }
+
+        .overlay-info {
+            position: absolute;
+            z-index: 1000;
+            background: rgba(0,0,0,0.75);
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-size: 9px;
+            pointer-events: none;
+        }
+        .source-label { bottom: 58px; left: 8px; }
+        .legend { bottom: 58px; right: 8px; }
+        .legend-row { display: flex; align-items: center; gap: 4px; margin-bottom: 1px; }
+        .legend-swatch { width: 14px; height: 8px; border-radius: 1px; }
+
+        .status {
+            position: absolute;
+            top: 50px; left: 50%; transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(0,0,0,0.85);
+            color: var(--accent);
+            padding: 6px 16px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .leaflet-container { background: #000 !important; }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <div class="nav-title">Regenradar</div>
+            <div class="nav-buttons">
+                <a href="index.html" class="nav-btn">🕐</a>
+                <a href="swiss-radar.html" class="nav-btn active">💧</a>
+            </div>
+        </div>
+    </nav>
+
+    <div id="map"></div>
+
+    <div class="overlay-info source-label">Source: MeteoSwiss RZC 1km/5min</div>
+    <div class="overlay-info legend">
+        <div class="legend-row"><div class="legend-swatch" style="background:rgba(120,120,255,0.45)"></div><span>&lt;0.5</span></div>
+        <div class="legend-row"><div class="legend-swatch" style="background:rgba(80,150,255,0.6)"></div><span>0.5</span></div>
+        <div class="legend-row"><div class="legend-swatch" style="background:rgba(50,200,50,0.7)"></div><span>1–2</span></div>
+        <div class="legend-row"><div class="legend-swatch" style="background:rgba(255,255,0,0.8)"></div><span>4</span></div>
+        <div class="legend-row"><div class="legend-swatch" style="background:rgba(255,160,0,0.86)"></div><span>8</span></div>
+        <div class="legend-row"><div class="legend-swatch" style="background:rgba(255,50,50,0.94)"></div><span>16</span></div>
+        <div class="legend-row"><div class="legend-swatch" style="background:rgba(180,0,180,1)"></div><span>32+ mm/h</span></div>
+    </div>
+
+    <div class="status" id="status">Lade Radardaten…</div>
+
+    <div class="controls">
+        <button class="play-btn" id="playBtn" onclick="togglePlay()">▶</button>
+        <div class="timeline">
+            <input type="range" id="slider" min="0" max="0" value="0"
+                   oninput="showFrame(parseInt(this.value))">
+            <div class="timeline-label" id="timeLabel">--:--</div>
+        </div>
+    </div>
+
+    <script>
+    // =========================================================================
+    //  CONFIG
+    // =========================================================================
+    const STAC_BASE  = 'https://data.geo.admin.ch/api/stac/v1';
+    const COLLECTION = 'ch.meteoschweiz.ogd-radar-precip';
+    const MAX_FRAMES = 24;          // 24 × 5 min = 2 h
+    const ANIM_DELAY = 600;         // ms between animation frames
+    const REFRESH_MS = 5 * 60000;   // auto-refresh every 5 min
+
+    // Full RZC grid at native 1 km resolution
+    const IMG_W = 710, IMG_H = 640;
+
+    // Bounding box of the full RZC grid in WGS84 [lat_min, lon_min, lat_max, lon_max]
+    const BBOX = [43.6194, 2.6895, 49.3746, 12.4625];
+
+    // Radar grid constants (fixed for all MeteoSwiss RZC files)
+    const GRID_XMIN  = 2255000;     // UL corner easting in LV95
+    const GRID_YMAX  = 1480003;     // UL corner northing in LV95
+    const GRID_COLS  = 710;
+    const GRID_ROWS  = 640;
+    const GRID_SCALE = 1000;        // 1 km per pixel
+
+    // Precipitation color scale: [mm/h threshold, R, G, B, A]
+    const COLORS = [
+        [ 0.0,   0,   0,   0,   0],
+        [ 0.1, 120, 120, 255, 100],
+        [ 0.5,  80, 150, 255, 150],
+        [ 1.0,  50, 180,  50, 170],
+        [ 2.0,  50, 220,  50, 190],
+        [ 4.0, 255, 255,   0, 200],
+        [ 8.0, 255, 160,   0, 220],
+        [16.0, 255,  50,  50, 240],
+        [32.0, 180,   0, 180, 255],
+    ];
+
+    // =========================================================================
+    //  WGS84 → CH1903+/LV95 (swisstopo approximate formulas, <1m accuracy)
+    // =========================================================================
+    function wgs84ToLV95(lat, lon) {
+        const phi = (lat * 3600 - 169028.66) / 10000;
+        const lam = (lon * 3600 - 26782.5)   / 10000;
+        const E = 2600072.37
+                + 211455.93 * lam
+                -  10938.51 * lam * phi
+                -      0.36 * lam * phi * phi
+                -     44.54 * lam * lam * lam;
+        const N = 1200147.07
+                + 308807.95 * phi
+                +   3745.25 * lam * lam
+                +     76.63 * phi * phi
+                -    194.56 * lam * lam * phi
+                +    119.79 * phi * phi * phi;
+        return [E, N];
+    }
+
+    // =========================================================================
+    //  Pre-build pixel lookup: output pixel (r,c) → radar flat index
+    // =========================================================================
+    let LOOKUP;
+    function buildLookup() {
+        LOOKUP = new Int32Array(IMG_W * IMG_H);
+        const [latMin, lonMin, latMax, lonMax] = BBOX;
+        let i = 0;
+        for (let r = 0; r < IMG_H; r++) {
+            const lat = latMax - (r / IMG_H) * (latMax - latMin);
+            for (let c = 0; c < IMG_W; c++) {
+                const lon = lonMin + (c / IMG_W) * (lonMax - lonMin);
+                const [E, N] = wgs84ToLV95(lat, lon);
+                const gc = Math.floor((E - GRID_XMIN) / GRID_SCALE);
+                const gr = Math.floor((GRID_YMAX - N) / GRID_SCALE);
+                if (gc >= 0 && gc < GRID_COLS && gr >= 0 && gr < GRID_ROWS) {
+                    LOOKUP[i] = gr * GRID_COLS + gc;
+                } else {
+                    LOOKUP[i] = -1;
+                }
+                i++;
+            }
+        }
+    }
+
+    // =========================================================================
+    //  Render radar flat array → RGBA ImageData
+    // =========================================================================
+    function renderRadar(radarFlat) {
+        const imgData = new ImageData(IMG_W, IMG_H);
+        const px = imgData.data;
+        const cLen = COLORS.length;
+        for (let i = 0, len = LOOKUP.length; i < len; i++) {
+            const idx = LOOKUP[i];
+            if (idx < 0) continue;
+            const val = radarFlat[idx];
+            if (val !== val || val <= 0) continue; // NaN or zero
+
+            let r = 0, g = 0, b = 0, a = 0;
+            if (val >= COLORS[cLen - 1][0]) {
+                r = COLORS[cLen-1][1]; g = COLORS[cLen-1][2];
+                b = COLORS[cLen-1][3]; a = COLORS[cLen-1][4];
+            } else {
+                for (let j = 0; j < cLen - 1; j++) {
+                    if (val >= COLORS[j][0] && val < COLORS[j+1][0]) {
+                        const t = (val - COLORS[j][0]) / (COLORS[j+1][0] - COLORS[j][0]);
+                        r = COLORS[j][1] + t * (COLORS[j+1][1] - COLORS[j][1]);
+                        g = COLORS[j][2] + t * (COLORS[j+1][2] - COLORS[j][2]);
+                        b = COLORS[j][3] + t * (COLORS[j+1][3] - COLORS[j][3]);
+                        a = COLORS[j][4] + t * (COLORS[j+1][4] - COLORS[j][4]);
+                        break;
+                    }
+                }
+            }
+            const p = i * 4;
+            px[p]     = r;
+            px[p + 1] = g;
+            px[p + 2] = b;
+            px[p + 3] = a;
+        }
+        return imgData;
+    }
+
+    // =========================================================================
+    //  ImageData → data URL (offscreen canvas)
+    // =========================================================================
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = IMG_W;
+    offCanvas.height = IMG_H;
+    const offCtx = offCanvas.getContext('2d');
+
+    function imageDataToURL(imgData) {
+        offCtx.putImageData(imgData, 0, 0);
+        return offCanvas.toDataURL('image/png');
+    }
+
+    // =========================================================================
+    //  Parse one HDF5 ArrayBuffer → { timestamp, dataURL }
+    // =========================================================================
+    function parseRZC(buffer) {
+        const f = new hdf5.File(buffer);
+
+        let dateStr = f.get('what').attrs['date'];
+        let timeStr = f.get('what').attrs['time'];
+        if (dateStr instanceof Uint8Array || ArrayBuffer.isView(dateStr))
+            dateStr = new TextDecoder().decode(dateStr);
+        if (timeStr instanceof Uint8Array || ArrayBuffer.isView(timeStr))
+            timeStr = new TextDecoder().decode(timeStr);
+        if (typeof dateStr !== 'string') dateStr = String(dateStr);
+        if (typeof timeStr !== 'string') timeStr = String(timeStr);
+
+        const ts = dateStr.substring(0,4) + '-' + dateStr.substring(4,6) + '-' +
+                   dateStr.substring(6,8) + 'T' + timeStr.substring(0,2) + ':' +
+                   timeStr.substring(2,4) + 'Z';
+
+        const ds = f.get('dataset1/data1/data');
+        const rawValues = ds.value;
+
+        const imgData = renderRadar(rawValues);
+        const dataURL = imageDataToURL(imgData);
+
+        return { timestamp: ts, dataURL };
+    }
+
+    // =========================================================================
+    //  Fetch RZC file URLs from STAC API
+    // =========================================================================
+    async function fetchFrameURLs() {
+        const url = STAC_BASE + '/collections/' + COLLECTION +
+                    '/items?limit=16&sortby=-datetime';
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        let best = null, bestUpd = '';
+        for (const feat of data.features) {
+            const upd = feat.properties.updated || '';
+            if (upd > bestUpd) { bestUpd = upd; best = feat; }
+        }
+        if (!best) throw new Error('No STAC items found');
+
+        const assets = best.assets;
+        return Object.keys(assets)
+            .filter(k => k.startsWith('rzc'))
+            .sort()
+            .slice(-MAX_FRAMES)
+            .map(k => assets[k].href);
+    }
+
+    // =========================================================================
+    //  State
+    // =========================================================================
+    let frames = [];
+    let currentIdx = -1;
+    let playing = false;
+    let animTimer = null;
+
+    // =========================================================================
+    //  Leaflet map
+    // =========================================================================
+    const map = L.map('map', { center: [47.05, 7.1], zoom: 9, zoomControl: false });
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© OSM © CARTO',
+        subdomains: 'abcd',
+        maxZoom: 16
+    }).addTo(map);
+
+    L.control.zoom({ position: 'topright' }).addTo(map);
+
+    const overlayBounds = L.latLngBounds([BBOX[0], BBOX[1]], [BBOX[2], BBOX[3]]);
+
+    // =========================================================================
+    //  Display a frame (zero-flicker: all overlays pre-added, toggle opacity)
+    // =========================================================================
+    function showFrame(idx) {
+        if (idx < 0 || idx >= frames.length) return;
+
+        if (currentIdx >= 0 && currentIdx < frames.length) {
+            frames[currentIdx].overlay.setOpacity(0);
+        }
+
+        currentIdx = idx;
+        frames[idx].overlay.setOpacity(0.8);
+
+        const ts = frames[idx].timestamp;
+        document.getElementById('timeLabel').textContent =
+            ts.substring(11,16) + ' UTC  (' + (idx+1) + '/' + frames.length + ')';
+        document.getElementById('slider').value = idx;
+    }
+
+    // =========================================================================
+    //  Animation
+    // =========================================================================
+    function togglePlay() {
+        playing = !playing;
+        document.getElementById('playBtn').textContent = playing ? '⏸' : '▶';
+        if (playing) {
+            animTimer = setInterval(() => {
+                showFrame((currentIdx + 1) % frames.length);
+            }, ANIM_DELAY);
+        } else {
+            clearInterval(animTimer);
+        }
+    }
+
+    // =========================================================================
+    //  Main data loader
+    // =========================================================================
+    async function loadData() {
+        const status = document.getElementById('status');
+        status.style.display = 'block';
+        status.textContent = 'Lade Radardaten…';
+
+        try {
+            const urls = await fetchFrameURLs();
+            status.textContent = 'Lade ' + urls.length + ' Radarbilder…';
+
+            const newFrames = [];
+            let loaded = 0;
+
+            for (let i = 0; i < urls.length; i += 6) {
+                const batch = urls.slice(i, i + 6);
+                const results = await Promise.allSettled(
+                    batch.map(async (url) => {
+                        const resp = await fetch(url);
+                        const buf = await resp.arrayBuffer();
+                        return parseRZC(buf);
+                    })
+                );
+                for (const r of results) {
+                    if (r.status === 'fulfilled') {
+                        newFrames.push(r.value);
+                        loaded++;
+                    }
+                }
+                status.textContent = 'Verarbeite… ' + loaded + '/' + urls.length;
+            }
+
+            if (newFrames.length > 0) {
+                for (const f of frames) {
+                    map.removeLayer(f.overlay);
+                }
+
+                frames = newFrames.map(f => {
+                    const overlay = L.imageOverlay(f.dataURL, overlayBounds, {
+                        opacity: 0, interactive: false
+                    }).addTo(map);
+                    return { timestamp: f.timestamp, overlay };
+                });
+
+                currentIdx = -1;
+                const slider = document.getElementById('slider');
+                slider.max = frames.length - 1;
+                slider.value = frames.length - 1;
+                showFrame(frames.length - 1);
+            }
+            status.style.display = 'none';
+        } catch (e) {
+            console.error('Load error:', e);
+            status.textContent = 'Fehler: ' + e.message;
+        }
+    }
+
+    // =========================================================================
+    //  Init
+    // =========================================================================
+    buildLookup();
+    loadData();
+    setInterval(loadData, REFRESH_MS);
+
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', function(e) {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 300) e.preventDefault();
+        lastTouchEnd = now;
+    }, false);
+    </script>
+</body>
+</html>
