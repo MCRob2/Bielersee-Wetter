@@ -631,35 +631,6 @@
                         tick.style.top = midY + 'px';
                         tickCol.appendChild(tick);
                     });
-
-                    if (isToday && hourRows.length > 0) {
-                        let currentRow = null;
-                        let nextRow = null;
-                        hourRows.forEach(r => {
-                            const h = parseInt(r.dataset.hour);
-                            if (h === currentHour) currentRow = r;
-                            if (h === currentHour + 1) nextRow = r;
-                        });
-
-                        if (currentRow) {
-                            const currentMidY = currentRow.offsetTop + currentRow.offsetHeight / 2;
-                            let nextMidY;
-                            if (nextRow) {
-                                nextMidY = nextRow.offsetTop + nextRow.offsetHeight / 2;
-                            } else {
-                                nextMidY = currentMidY + currentRow.offsetHeight;
-                            }
-
-                            const fraction = currentMin / 60;
-                            const indicatorY = currentMidY + fraction * (nextMidY - currentMidY);
-
-                            const indicator = document.createElement('div');
-                            indicator.className = 'time-indicator';
-                            indicator.textContent = '▶';
-                            indicator.style.top = indicatorY + 'px';
-                            tickCol.appendChild(indicator);
-                        }
-                    }
                 });
             }
         }
@@ -723,17 +694,28 @@
         }, false);
 
         loadWeather().then(() => {
-            // After render + rAF, scroll current time to 25% of viewport
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    const indicator = document.querySelector('.time-indicator');
-                    if (indicator) {
-                        const rect = indicator.getBoundingClientRect();
-                        const target = window.scrollY + rect.top - window.innerHeight * 0.25;
-                        window.scrollTo(0, Math.max(0, target));
+            setTimeout(() => {
+                // Scroll CRM row (or current hour) to 25% of viewport
+                let el = document.querySelector('.crm-row');
+                if (!el) {
+                    // Fallback: today's current hour row
+                    const todayTitle = document.querySelector('.day-title.today');
+                    if (todayTitle) {
+                        const block = todayTitle.closest('.day-block');
+                        const rows = block?.querySelectorAll('.hour-row[data-hour]');
+                        const ch = new Date().getHours();
+                        if (rows) {
+                            for (const r of rows) {
+                                if (parseInt(r.dataset.hour) === ch) { el = r; break; }
+                            }
+                        }
                     }
-                });
-            });
+                }
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    window.scrollTo(0, Math.max(0, window.scrollY + rect.top - window.innerHeight * 0.25));
+                }
+            }, 100);
         });
     </script>
 </body>
