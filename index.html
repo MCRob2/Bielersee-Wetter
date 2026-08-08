@@ -17,7 +17,9 @@
             --rain-bar: #4a90e2;
             --today-color: #ff8c42;
             --sunrise-color: #f0c040;
-            /* Single source of truth for all column grids */
+            --crm-bg: rgba(40, 180, 99, 0.12);
+            --crm-border: rgba(40, 180, 99, 0.3);
+            --crm-text: #5dde8e;
             --tick-width: 3%;
             --cols: 12% 14% 12% 10% 20% 10% 10%;
         }
@@ -150,7 +152,6 @@
             flex: 1;
         }
 
-        /* Data rows use the same --cols variable */
         .hour-row {
             display: grid;
             grid-template-columns: var(--cols);
@@ -161,9 +162,18 @@
             border-bottom: 1px solid #1a1a1a;
         }
 
+        .hour-row.past {
+            opacity: 0.35;
+        }
+
         .hour-row.sunrise-row {
             background: rgba(240, 192, 64, 0.08);
             border-bottom: 1px solid rgba(240, 192, 64, 0.2);
+        }
+
+        .hour-row.crm-row {
+            background: var(--crm-bg);
+            border-bottom: 1px solid var(--crm-border);
         }
 
         .hour-row .cell {
@@ -247,6 +257,20 @@
             font-size: 16px;
         }
 
+        .crm-label {
+            font-family: "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
+            font-size: 13px;
+            color: var(--crm-text);
+            text-align: right !important;
+            padding-right: 6px;
+        }
+
+        .crm-tag {
+            font-size: 10px;
+            color: var(--crm-text);
+            opacity: 0.7;
+        }
+
         .loading {
             text-align: center;
             padding: 40px;
@@ -257,7 +281,7 @@
 <body>
     <nav>
         <div class="nav-inner">
-            <div class="nav-title">Plegere z Biu</div>
+            <div class="nav-title">Plégere au Landeron</div>
             <div class="nav-buttons">
                 <a href="index.html" class="nav-btn active">🕐</a>
                 <a href="swiss-radar.html" class="nav-btn">💧</a>
@@ -270,9 +294,10 @@
     </div>
 
     <script>
-        const API_URL = 'https://api.open-meteo.com/v1/dwd-icon';
-        const LAT = 47.1485;
-        const LON = 7.2437;
+        const API_URL = 'https://api.open-meteo.com/v1/forecast';
+        const LAT = 47.057;
+        const LON = 7.072;
+        const CRM_URL = 'https://api.existenz.ch/apiv1/smn/latest?locations=CRM';
 
         const weatherIconsDay = {
             0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️',
@@ -298,49 +323,119 @@
 
         const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
-        function degreesToCompass(degrees) {
-            const directions = ['N', 'NO', 'O', 'SO', 'S', 'SW', 'W', 'NW'];
-            const index = Math.round(((degrees % 360) / 45)) % 8;
-            return directions[index];
-        }
-
         function windArrow(degrees) {
             const arrows = ['↓', '↙', '←', '↖', '↑', '↗', '→', '↘'];
             const index = Math.round(((degrees % 360) / 45)) % 8;
             return arrows[index];
         }
 
-        function kmhToBeaufort(kmh) {
-            if (kmh < 1) return 0;
-            if (kmh < 6) return 1;
-            if (kmh < 12) return 2;
-            if (kmh < 20) return 3;
-            if (kmh < 29) return 4;
-            if (kmh < 39) return 5;
-            if (kmh < 50) return 6;
-            if (kmh < 62) return 7;
-            if (kmh < 75) return 8;
-            if (kmh < 89) return 9;
-            if (kmh < 103) return 10;
-            if (kmh < 118) return 11;
-            return 12;
+        function rainPips(mm) {
+            // pip 1: >0mm, pip 2: >=1mm, pip 3: >=2.5mm, pip 4: >=7.5mm
+            let count = 0;
+            if (mm > 0) count = 1;
+            if (mm >= 1) count = 2;
+            if (mm >= 2.5) count = 3;
+            if (mm >= 7.5) count = 4;
+            return count;
+        }
+
+        async function fetchCH1() {
+            const params = new URLSearchParams({
+                latitude: LAT,
+                longitude: LON,
+                hourly: 'temperature_2m,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m',
+                daily: 'sunrise,sunset',
+                timezone: 'Europe/Zurich',
+                models: 'meteoswiss_icon_ch1',
+                forecast_hours: 33
+            });
+            const res = await fetch(`${API_URL}?${params}`);
+            return res.json();
+        }
+
+        async function fetchCH2() {
+            const params = new URLSearchParams({
+                latitude: LAT,
+                longitude: LON,
+                hourly: 'temperature_2m,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m',
+                daily: 'sunrise,sunset',
+                timezone: 'Europe/Zurich',
+                models: 'meteoswiss_icon_ch2',
+                forecast_days: 5
+            });
+            const res = await fetch(`${API_URL}?${params}`);
+            return res.json();
+        }
+
+        async function fetchCRM() {
+            try {
+                const res = await fetch(CRM_URL);
+                const data = await res.json();
+                const vals = {};
+                for (const entry of data.payload) {
+                    vals[entry.par] = entry.val;
+                }
+                vals._timestamp = data.payload[0]?.timestamp;
+                return vals;
+            } catch (e) {
+                console.error('CRM fetch error:', e);
+                return null;
+            }
+        }
+
+        function mergeForecasts(ch1, ch2) {
+            // Use CH1 as base, fill remaining hours from CH2
+            const merged = {
+                hourly: {
+                    time: [...ch1.hourly.time],
+                    temperature_2m: [...ch1.hourly.temperature_2m],
+                    precipitation: [...ch1.hourly.precipitation],
+                    weather_code: [...ch1.hourly.weather_code],
+                    wind_speed_10m: [...ch1.hourly.wind_speed_10m],
+                    wind_gusts_10m: [...ch1.hourly.wind_gusts_10m],
+                    wind_direction_10m: [...ch1.hourly.wind_direction_10m]
+                },
+                daily: ch2.daily // CH2 has more days
+            };
+
+            const ch1Times = new Set(ch1.hourly.time);
+
+            for (let i = 0; i < ch2.hourly.time.length; i++) {
+                const t = ch2.hourly.time[i];
+                if (!ch1Times.has(t)) {
+                    merged.hourly.time.push(t);
+                    merged.hourly.temperature_2m.push(ch2.hourly.temperature_2m[i]);
+                    merged.hourly.precipitation.push(ch2.hourly.precipitation[i]);
+                    merged.hourly.weather_code.push(ch2.hourly.weather_code[i]);
+                    merged.hourly.wind_speed_10m.push(ch2.hourly.wind_speed_10m[i]);
+                    merged.hourly.wind_gusts_10m.push(ch2.hourly.wind_gusts_10m[i]);
+                    merged.hourly.wind_direction_10m.push(ch2.hourly.wind_direction_10m[i]);
+                }
+            }
+
+            // Sort by time
+            const indices = merged.hourly.time.map((t, i) => i);
+            indices.sort((a, b) => merged.hourly.time[a].localeCompare(merged.hourly.time[b]));
+
+            const sorted = {
+                hourly: { time: [], temperature_2m: [], precipitation: [], weather_code: [], wind_speed_10m: [], wind_gusts_10m: [], wind_direction_10m: [] },
+                daily: merged.daily
+            };
+
+            for (const i of indices) {
+                for (const key of Object.keys(sorted.hourly)) {
+                    sorted.hourly[key].push(merged.hourly[key][i]);
+                }
+            }
+
+            return sorted;
         }
 
         async function loadWeather() {
             try {
-                const params = new URLSearchParams({
-                    latitude: LAT,
-                    longitude: LON,
-                    hourly: 'temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m',
-                    daily: 'sunrise,sunset',
-                    timezone: 'Europe/Zurich',
-                    forecast_days: 7
-                });
-
-                const response = await fetch(`${API_URL}?${params}`);
-                const data = await response.json();
-
-                displayWeather(data);
+                const [ch1, ch2, crm] = await Promise.all([fetchCH1(), fetchCH2(), fetchCRM()]);
+                const data = mergeForecasts(ch1, ch2);
+                displayWeather(data, crm);
             } catch (error) {
                 console.error('Error loading weather:', error);
                 document.getElementById('weather-container').innerHTML =
@@ -348,7 +443,7 @@
             }
         }
 
-        function displayWeather(data) {
+        function displayWeather(data, crm) {
             const container = document.getElementById('weather-container');
             container.innerHTML = '';
 
@@ -358,26 +453,57 @@
             const today = now.toDateString();
             const currentHour = now.getHours();
             const currentMin = now.getMinutes();
+            const nowMs = now.getTime();
 
-            for (let day = 0; day < 7; day++) {
-                const dayDate = new Date(now);
-                dayDate.setDate(now.getDate() + day);
+            // CRM data
+            let crmTime = null;
+            let crmHour = null;
+            let crmMin = null;
+            let crmDayStr = null;
+            if (crm && crm._timestamp) {
+                crmTime = new Date(crm._timestamp * 1000);
+                crmHour = crmTime.getHours();
+                crmMin = crmTime.getMinutes();
+                crmDayStr = crmTime.toDateString();
+            }
 
+            // Determine how many unique days we have
+            const daySet = new Set();
+            for (const t of hourly.time) {
+                daySet.add(t.slice(0, 10));
+            }
+            const dayStrings = [...daySet].sort();
+
+            for (const dayStr of dayStrings) {
+                const dayDate = new Date(dayStr + 'T12:00:00');
                 const isToday = dayDate.toDateString() === today;
                 const dayName = dayNames[dayDate.getDay()];
                 const dateStr = `${dayDate.getDate()}.${dayDate.getMonth() + 1}.`;
 
-                const sunriseStr = daily.sunrise[day];
-                const sunsetStr = daily.sunset[day];
-                const sunriseDate = new Date(sunriseStr);
-                const sunsetDate = new Date(sunsetStr);
-                const sunriseHour = sunriseDate.getHours();
-                const sunriseMin = sunriseDate.getMinutes();
-                const sunsetHour = sunsetDate.getHours();
-                const sunsetMin = sunsetDate.getMinutes();
+                // Find sunrise/sunset for this day
+                let sunriseHour = -1, sunriseMin = 0, sunsetHour = -1, sunsetMin = 0;
+                let sunriseTotalMin = -1, sunsetTotalMin = -1;
 
-                const sunriseTotalMin = sunriseHour * 60 + sunriseMin;
-                const sunsetTotalMin = sunsetHour * 60 + sunsetMin;
+                if (daily && daily.sunrise) {
+                    for (let d = 0; d < daily.sunrise.length; d++) {
+                        if (daily.sunrise[d].startsWith(dayStr)) {
+                            const srDate = new Date(daily.sunrise[d]);
+                            sunriseHour = srDate.getHours();
+                            sunriseMin = srDate.getMinutes();
+                            sunriseTotalMin = sunriseHour * 60 + sunriseMin;
+                            break;
+                        }
+                    }
+                    for (let d = 0; d < daily.sunset.length; d++) {
+                        if (daily.sunset[d].startsWith(dayStr)) {
+                            const ssDate = new Date(daily.sunset[d]);
+                            sunsetHour = ssDate.getHours();
+                            sunsetMin = ssDate.getMinutes();
+                            sunsetTotalMin = sunsetHour * 60 + sunsetMin;
+                            break;
+                        }
+                    }
+                }
 
                 const block = document.createElement('div');
                 block.className = 'day-block';
@@ -386,12 +512,6 @@
                 title.className = `day-title${isToday ? ' today' : ''}`;
                 title.textContent = `${dayName} ${dateStr}`;
                 block.appendChild(title);
-
-                const dayStr = dayDate.toISOString().slice(0, 10);
-                const startTime = dayStr + 'T00:00';
-                const startIndex = hourly.time.findIndex(t => t >= startTime);
-
-                if (startIndex === -1) continue;
 
                 const dayContent = document.createElement('div');
                 dayContent.className = 'day-content';
@@ -404,40 +524,54 @@
 
                 let sunriseInserted = false;
                 let sunsetInserted = false;
+                let crmInserted = false;
 
-                for (let h = 0; h < 24; h++) {
-                    const idx = startIndex + h;
-                    if (idx >= hourly.time.length) break;
+                // Collect this day's hours from merged data
+                const dayHours = [];
+                for (let i = 0; i < hourly.time.length; i++) {
+                    if (hourly.time[i].startsWith(dayStr)) {
+                        dayHours.push(i);
+                    }
+                }
 
-                    if (!sunriseInserted) {
-                        const hourStartMin = h * 60;
-                        if (sunriseTotalMin < hourStartMin || sunriseTotalMin === hourStartMin) {
-                            rowsCol.appendChild(makeSunRow('☀↑', sunriseHour, sunriseMin));
-                            sunriseInserted = true;
-                        }
+                for (const idx of dayHours) {
+                    const timeStr = hourly.time[idx];
+                    const rowDate = new Date(timeStr);
+                    const h = rowDate.getHours();
+                    const hourStartMin = h * 60;
+
+                    // Insert sunrise before this row if needed
+                    if (!sunriseInserted && sunriseTotalMin >= 0 && sunriseTotalMin < hourStartMin + 60 && sunriseTotalMin <= hourStartMin) {
+                        rowsCol.appendChild(makeSunRow('☀↑', sunriseHour, sunriseMin));
+                        sunriseInserted = true;
+                    }
+
+                    // Insert CRM row before forecast row if CRM timestamp falls in this hour
+                    if (!crmInserted && crmTime && crmDayStr === dayDate.toDateString() && crmHour === h) {
+                        rowsCol.appendChild(makeCrmRow(crm, crmHour, crmMin));
+                        crmInserted = true;
                     }
 
                     const hourMid = h * 60 + 30;
-                    const isDaytime = hourMid >= sunriseTotalMin && hourMid <= sunsetTotalMin;
+                    const isDaytime = sunriseTotalMin >= 0 && hourMid >= sunriseTotalMin && hourMid <= sunsetTotalMin;
 
-                    const temp = Math.round(hourly.temperature_2m[idx] || 0);
+                    const temp = Math.round(hourly.temperature_2m[idx] ?? 0);
                     const wmoCode = hourly.weather_code[idx];
                     const icon = isDaytime
                         ? (weatherIconsDay[wmoCode] || '❓')
                         : (weatherIconsNight[wmoCode] || '❓');
-                    const rainProb = hourly.precipitation_probability[idx] || 0;
-                    const windAvg = Math.round(hourly.wind_speed_10m[idx] || 0);
-                    const windGust = Math.round(hourly.wind_gusts_10m[idx] || 0);
-                    const windDeg = hourly.wind_direction_10m[idx] || 0;
-                    const windDirText = degreesToCompass(windDeg);
+                    const precip = hourly.precipitation[idx] ?? 0;
+                    const windAvg = Math.round(hourly.wind_speed_10m[idx] ?? 0);
+                    const windGust = Math.round(hourly.wind_gusts_10m[idx] ?? 0);
+                    const windDeg = hourly.wind_direction_10m[idx] ?? 0;
                     const arrow = windArrow(windDeg);
 
-                    const bftAvg = kmhToBeaufort(windAvg);
-                    const bftGust = kmhToBeaufort(windGust);
-                    const barCount = Math.min(Math.round(rainProb / 25), 4);
+                    const barCount = rainPips(precip);
+
+                    const isPast = isToday && h < currentHour;
 
                     const row = document.createElement('div');
-                    row.className = 'hour-row';
+                    row.className = 'hour-row' + (isPast ? ' past' : '');
                     row.dataset.hour = h;
 
                     let rainHTML = '';
@@ -447,10 +581,6 @@
                             : '<div class="rain-pip empty"></div>';
                     }
 
-                    const windStr = bftGust > bftAvg
-                        ? `${bftAvg}/<span class="gust">${bftGust}</span>`
-                        : `${bftAvg}`;
-
                     const iconHTML = `${icon}<span class="icon-spacer">↑</span>`;
 
                     row.innerHTML =
@@ -458,13 +588,19 @@
                         `<div class="cell cell-temp">${temp}°</div>` +
                         `<div class="cell cell-icon">${iconHTML}</div>` +
                         `<div class="cell cell-rain">${rainHTML}</div>` +
-                        `<div class="cell cell-wind">${bftAvg}</div>` +
-                        `<div class="cell cell-wind gust">${bftGust > bftAvg ? bftGust : ''}</div>` +
+                        `<div class="cell cell-wind">${windAvg}</div>` +
+                        `<div class="cell cell-wind gust">${windGust > windAvg ? windGust : ''}</div>` +
                         `<div class="cell cell-arrow">${arrow}</div>`;
 
                     rowsCol.appendChild(row);
 
-                    if (!sunsetInserted && sunsetHour === h) {
+                    // Insert sunrise after this row if it falls within this hour
+                    if (!sunriseInserted && sunriseTotalMin >= 0 && sunriseTotalMin >= hourStartMin && sunriseTotalMin < hourStartMin + 60) {
+                        rowsCol.appendChild(makeSunRow('☀↑', sunriseHour, sunriseMin));
+                        sunriseInserted = true;
+                    }
+
+                    if (!sunsetInserted && sunsetTotalMin >= 0 && sunsetHour === h) {
                         rowsCol.appendChild(makeSunRow('☀↓', sunsetHour, sunsetMin));
                         sunsetInserted = true;
                     }
@@ -477,7 +613,7 @@
 
                 // Position ticks and time indicator after DOM attach
                 requestAnimationFrame(() => {
-                    const hourRows = rowsCol.querySelectorAll('.hour-row:not(.sunrise-row)');
+                    const hourRows = rowsCol.querySelectorAll('.hour-row:not(.sunrise-row):not(.crm-row)');
                     hourRows.forEach(r => {
                         const midY = r.offsetTop + r.offsetHeight / 2;
                         const tick = document.createElement('div');
@@ -530,6 +666,40 @@
                 `<div class="cell"></div>` +
                 `<div class="cell"></div>` +
                 `<div class="cell"></div>`;
+            return row;
+        }
+
+        function makeCrmRow(crm, hour, min) {
+            const row = document.createElement('div');
+            row.className = 'hour-row crm-row';
+            const timeStr = `${hour}:${String(min).padStart(2, '0')}`;
+
+            const temp = crm.tt != null ? Math.round(crm.tt) : '';
+            const windAvg = crm.ff != null ? Math.round(crm.ff) : '';
+            const windGust = crm.fx != null ? Math.round(crm.fx) : '';
+            const windDir = crm.dd != null ? crm.dd : 0;
+            const arrow = crm.dd != null ? windArrow(windDir) : '';
+            const precip = crm.rr != null ? crm.rr : 0;
+            const barCount = rainPips(precip);
+
+            let rainHTML = '';
+            for (let b = 0; b < 4; b++) {
+                rainHTML += b < barCount
+                    ? '<div class="rain-pip active"></div>'
+                    : '<div class="rain-pip empty"></div>';
+            }
+
+            const showGust = windGust && windAvg && windGust > windAvg;
+
+            row.innerHTML =
+                `<div class="cell crm-label">${timeStr}</div>` +
+                `<div class="cell cell-temp" style="color:var(--crm-text)">${temp}°</div>` +
+                `<div class="cell crm-tag">CRM</div>` +
+                `<div class="cell cell-rain">${rainHTML}</div>` +
+                `<div class="cell cell-wind" style="color:var(--crm-text)">${windAvg}</div>` +
+                `<div class="cell cell-wind gust">${showGust ? windGust : ''}</div>` +
+                `<div class="cell cell-arrow">${arrow}</div>`;
+
             return row;
         }
 
