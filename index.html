@@ -722,7 +722,19 @@
             lastTouchEnd = now;
         }, false);
 
-        loadWeather();
+        loadWeather().then(() => {
+            // After render + rAF, scroll current time to 25% of viewport
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    const indicator = document.querySelector('.time-indicator');
+                    if (indicator) {
+                        const rect = indicator.getBoundingClientRect();
+                        const target = window.scrollY + rect.top - window.innerHeight * 0.25;
+                        window.scrollTo(0, Math.max(0, target));
+                    }
+                });
+            });
+        });
     </script>
 </body>
 </html>
