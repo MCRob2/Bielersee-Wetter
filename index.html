@@ -537,6 +537,9 @@
                     const timeStr = hourly.time[idx];
                     const rowDate = new Date(timeStr);
                     const h = rowDate.getHours();
+                    // Skip rows more than 6 hours before now on today
+                    if (isToday && h < currentHour - 6) continue;
+
                     const hourStartMin = h * 60;
 
                     // Insert sunrise before this row if needed
