@@ -265,12 +265,6 @@
             padding-right: 6px;
         }
 
-        .crm-tag {
-            font-size: 10px;
-            color: var(--crm-text);
-            opacity: 0.7;
-        }
-
         .loading {
             text-align: center;
             padding: 40px;
@@ -384,7 +378,16 @@
         }
 
         function mergeForecasts(ch1, ch2) {
-            // Use CH1 as base, fill remaining hours from CH2
+            // Build CH2 lookup by time
+            const ch2Map = {};
+            const fields = ['temperature_2m', 'precipitation', 'weather_code', 'wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m'];
+            for (let i = 0; i < ch2.hourly.time.length; i++) {
+                const entry = {};
+                for (const f of fields) entry[f] = ch2.hourly[f][i];
+                ch2Map[ch2.hourly.time[i]] = entry;
+            }
+
+            // Start with CH1, but patch nulls from CH2
             const merged = {
                 hourly: {
                     time: [...ch1.hourly.time],
@@ -398,18 +401,25 @@
                 daily: ch2.daily // CH2 has more days
             };
 
+            // Patch CH1 nulls with CH2 values
             const ch1Times = new Set(ch1.hourly.time);
+            for (let i = 0; i < merged.hourly.time.length; i++) {
+                const t = merged.hourly.time[i];
+                const ch2Entry = ch2Map[t];
+                if (!ch2Entry) continue;
+                for (const f of fields) {
+                    if (merged.hourly[f][i] == null) {
+                        merged.hourly[f][i] = ch2Entry[f];
+                    }
+                }
+            }
 
+            // Add CH2 hours not in CH1
             for (let i = 0; i < ch2.hourly.time.length; i++) {
                 const t = ch2.hourly.time[i];
                 if (!ch1Times.has(t)) {
                     merged.hourly.time.push(t);
-                    merged.hourly.temperature_2m.push(ch2.hourly.temperature_2m[i]);
-                    merged.hourly.precipitation.push(ch2.hourly.precipitation[i]);
-                    merged.hourly.weather_code.push(ch2.hourly.weather_code[i]);
-                    merged.hourly.wind_speed_10m.push(ch2.hourly.wind_speed_10m[i]);
-                    merged.hourly.wind_gusts_10m.push(ch2.hourly.wind_gusts_10m[i]);
-                    merged.hourly.wind_direction_10m.push(ch2.hourly.wind_direction_10m[i]);
+                    for (const f of fields) merged.hourly[f].push(ch2.hourly[f][i]);
                 }
             }
 
@@ -546,20 +556,14 @@
                         sunriseInserted = true;
                     }
 
-                    // Insert CRM row before forecast row if CRM timestamp falls in this hour
-                    if (!crmInserted && crmTime && crmDayStr === dayDate.toDateString() && crmHour === h) {
-                        rowsCol.appendChild(makeCrmRow(crm, crmHour, crmMin));
-                        crmInserted = true;
-                    }
-
                     const hourMid = h * 60 + 30;
                     const isDaytime = sunriseTotalMin >= 0 && hourMid >= sunriseTotalMin && hourMid <= sunsetTotalMin;
 
                     const temp = Math.round(hourly.temperature_2m[idx] ?? 0);
                     const wmoCode = hourly.weather_code[idx];
-                    const icon = isDaytime
-                        ? (weatherIconsDay[wmoCode] || '❓')
-                        : (weatherIconsNight[wmoCode] || '❓');
+                    const icon = wmoCode != null
+                        ? (isDaytime ? (weatherIconsDay[wmoCode] || '') : (weatherIconsNight[wmoCode] || ''))
+                        : '';
                     const precip = hourly.precipitation[idx] ?? 0;
                     const windAvg = Math.round(hourly.wind_speed_10m[idx] ?? 0);
                     const windGust = Math.round(hourly.wind_gusts_10m[idx] ?? 0);
@@ -593,6 +597,12 @@
                         `<div class="cell cell-arrow">${arrow}</div>`;
 
                     rowsCol.appendChild(row);
+
+                    // Insert CRM row after the forecast row for this hour
+                    if (!crmInserted && crmTime && crmDayStr === dayDate.toDateString() && crmHour === h) {
+                        rowsCol.appendChild(makeCrmRow(crm, crmHour, crmMin));
+                        crmInserted = true;
+                    }
 
                     // Insert sunrise after this row if it falls within this hour
                     if (!sunriseInserted && sunriseTotalMin >= 0 && sunriseTotalMin >= hourStartMin && sunriseTotalMin < hourStartMin + 60) {
@@ -694,7 +704,7 @@
             row.innerHTML =
                 `<div class="cell crm-label">${timeStr}</div>` +
                 `<div class="cell cell-temp" style="color:var(--crm-text)">${temp}°</div>` +
-                `<div class="cell crm-tag">CRM</div>` +
+                `<div class="cell"></div>` +
                 `<div class="cell cell-rain">${rainHTML}</div>` +
                 `<div class="cell cell-wind" style="color:var(--crm-text)">${windAvg}</div>` +
                 `<div class="cell cell-wind gust">${showGust ? windGust : ''}</div>` +
