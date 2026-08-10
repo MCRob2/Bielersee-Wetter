@@ -532,6 +532,9 @@
                 if (dayHours.length === 0) continue;
 
                 const firstHour = new Date(hourly.time[dayHours[0]]).getHours();
+                const lastHour = new Date(hourly.time[dayHours[dayHours.length - 1]]).getHours();
+                const rangeStart = firstHour * 60;
+                const rangeEnd = lastHour * 60 + 60;
 
                 // Find sunrise/sunset for this day
                 let sunriseHour = -1, sunriseMin = 0, sunsetHour = -1, sunsetMin = 0;
@@ -575,26 +578,17 @@
                 const rowsCol = document.createElement('div');
                 rowsCol.className = 'rows-column';
 
-                let sunriseInserted = false;
-                let sunsetInserted = false;
+                /* Every row carries the minute-of-day it belongs at, and the whole
+                   list is sorted once before it's attached. Hour rows, sun events
+                   and the live CRM reading then land in true chronological order
+                   no matter what order they were built in. */
+                const rows = [];
                 let crmInserted = false;
-
-                // A sun event that happened before the first rendered hour has no row
-                // to attach to — suppress it instead of dumping it at the top.
-                if (sunriseTotalMin >= 0 && sunriseTotalMin < firstHour * 60) sunriseInserted = true;
-                if (sunsetTotalMin >= 0 && sunsetTotalMin < firstHour * 60) sunsetInserted = true;
 
                 for (const idx of dayHours) {
                     const timeStr = hourly.time[idx];
                     const rowDate = new Date(timeStr);
                     const h = rowDate.getHours();
-                    const hourStartMin = h * 60;
-
-                    // Insert sunrise before this row if needed
-                    if (!sunriseInserted && sunriseTotalMin >= 0 && sunriseTotalMin < hourStartMin + 60 && sunriseTotalMin <= hourStartMin) {
-                        rowsCol.appendChild(makeSunRow('☀↑', sunriseHour, sunriseMin));
-                        sunriseInserted = true;
-                    }
 
                     const hourMid = h * 60 + 30;
                     const isDaytime = sunriseTotalMin >= 0 && hourMid >= sunriseTotalMin && hourMid <= sunsetTotalMin;
@@ -637,25 +631,38 @@
                         `<div class="cell cell-wind gust">${windGust > windAvg ? windGust : ''}</div>` +
                         `<div class="cell cell-arrow">${arrow}</div>`;
 
-                    rowsCol.appendChild(row);
+                    // order 0 keeps the full hour ahead of any event on the same minute
+                    rows.push({ min: h * 60, order: 0, el: row });
 
-                    // Insert CRM row after the forecast row for this hour
                     if (!crmInserted && crmTime && crmDayStr === dayDate.toDateString() && crmHour === h) {
-                        rowsCol.appendChild(makeCrmRow(crm, crmHour, crmMin));
+                        rows.push({
+                            min: crmHour * 60 + crmMin,
+                            order: 1,
+                            el: makeCrmRow(crm, crmHour, crmMin)
+                        });
                         crmInserted = true;
                     }
-
-                    // Insert sunrise after this row if it falls within this hour
-                    if (!sunriseInserted && sunriseTotalMin >= 0 && sunriseTotalMin >= hourStartMin && sunriseTotalMin < hourStartMin + 60) {
-                        rowsCol.appendChild(makeSunRow('☀↑', sunriseHour, sunriseMin));
-                        sunriseInserted = true;
-                    }
-
-                    if (!sunsetInserted && sunsetTotalMin >= 0 && sunsetHour === h) {
-                        rowsCol.appendChild(makeSunRow('☀↓', sunsetHour, sunsetMin));
-                        sunsetInserted = true;
-                    }
                 }
+
+                // A sun event only gets a row if it falls inside the rendered range —
+                // otherwise it would be stranded at the top or bottom of the day.
+                if (sunriseTotalMin >= rangeStart && sunriseTotalMin < rangeEnd) {
+                    rows.push({
+                        min: sunriseTotalMin,
+                        order: 1,
+                        el: makeSunRow('☀↑', sunriseHour, sunriseMin)
+                    });
+                }
+                if (sunsetTotalMin >= rangeStart && sunsetTotalMin < rangeEnd) {
+                    rows.push({
+                        min: sunsetTotalMin,
+                        order: 1,
+                        el: makeSunRow('☀↓', sunsetHour, sunsetMin)
+                    });
+                }
+
+                rows.sort((a, b) => a.min - b.min || a.order - b.order);
+                for (const r of rows) rowsCol.appendChild(r.el);
 
                 dayContent.appendChild(tickCol);
                 dayContent.appendChild(rowsCol);
